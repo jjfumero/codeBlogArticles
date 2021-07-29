@@ -104,11 +104,11 @@ int main(int argc, char **argv) {
     const uint32_t items = 1024;
     constexpr size_t allocSize = items * items * sizeof(int);
     ze_device_mem_alloc_desc_t memAllocDesc;
-    memAllocDesc.flags = ZE_DEVICE_MEM_ALLOC_FLAG_BIAS_UNCACHED;
+    //memAllocDesc.flags = ZE_DEVICE_MEM_ALLOC_FLAG_BIAS_UNCACHED;
     memAllocDesc.ordinal = 0;
 
     ze_host_mem_alloc_desc_t hostDesc;
-    hostDesc.flags = ZE_HOST_MEM_ALLOC_FLAG_BIAS_UNCACHED;
+    //hostDesc.flags = ZE_HOST_MEM_ALLOC_FLAG_BIAS_UNCACHED;
 
 
     void *sharedA = nullptr;
