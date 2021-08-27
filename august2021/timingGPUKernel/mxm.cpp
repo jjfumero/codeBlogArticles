@@ -135,11 +135,11 @@ int main(int argc, char **argv) {
     // Create two buffers
     uint32_t items = sizeMatrix;
     size_t allocSize = items * items * sizeof(float);
-    ze_device_mem_alloc_desc_t memAllocDesc;
+    ze_device_mem_alloc_desc_t memAllocDesc = {ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC};
     //memAllocDesc.flags = ZE_DEVICE_MEM_ALLOC_FLAG_BIAS_CACHED;
     memAllocDesc.ordinal = 0;
 
-    ze_host_mem_alloc_desc_t hostDesc;
+    ze_host_mem_alloc_desc_t hostDesc = {ZE_STRUCTURE_TYPE_HOST_MEM_ALLOC_DESC};
     //hostDesc.flags = ZE_HOST_MEM_ALLOC_FLAG_BIAS_UNCACHED;
 
 

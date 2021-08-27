@@ -103,11 +103,11 @@ int main(int argc, char **argv) {
     // Create two buffers
     const uint32_t items = 1024;
     constexpr size_t allocSize = items * items * sizeof(int);
-    ze_device_mem_alloc_desc_t memAllocDesc;
+    ze_device_mem_alloc_desc_t memAllocDesc = {ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC};
     //memAllocDesc.flags = ZE_DEVICE_MEM_ALLOC_FLAG_BIAS_UNCACHED;
     memAllocDesc.ordinal = 0;
 
-    ze_host_mem_alloc_desc_t hostDesc;
+    ze_host_mem_alloc_desc_t hostDesc = {ZE_STRUCTURE_TYPE_HOST_MEM_ALLOC_DESC};
     //hostDesc.flags = ZE_HOST_MEM_ALLOC_FLAG_BIAS_UNCACHED;
 
 

@@ -11,6 +11,8 @@
 #include <memory>
 #include <vector>
 
+#define MAX_ITERATIONS 15
+
 #define VALIDATECALL(myZeCall) \
     if (myZeCall != ZE_RESULT_SUCCESS){ \
         std::cout << "Error at "       \
@@ -92,14 +94,7 @@ void createCommandList(ze_device_handle_t device, ze_context_handle_t context, z
     VALIDATECALL(zeCommandListCreate(context, device, &cmdListDesc, &cmdList));
 }
 
-int runWithSharedMemory(int argc, char** argv) {
-
-    uint32_t inputElements = 512;
-    if (argc > 1) {
-        inputElements = atoi(argv[1]);
-    }
-
-    std::cout << "#inputElements: " << inputElements << std::endl;
+int profileWithSharedMemoryCopies(int inputBytes) {
 
     ze_driver_handle_t driverHandle;
     ze_context_handle_t context;
@@ -116,18 +111,13 @@ int runWithSharedMemory(int argc, char** argv) {
     ze_command_list_handle_t cmdList;
     createCommandList(device, context, cmdList, ordinal);
 
-    // Create two buffers
-    uint32_t items = inputElements;
-    size_t allocSize = items * sizeof(float);
-
-    std::cout << "Total ALLOC SIZE: " << allocSize << " (bytes)\n";
-
-    ze_device_mem_alloc_desc_t memAllocDesc;
-    memAllocDesc.flags = ZE_DEVICE_MEM_ALLOC_FLAG_BIAS_CACHED;
+    size_t allocSize = inputBytes;
+    ze_device_mem_alloc_desc_t memAllocDesc = {ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC};
+    memAllocDesc.flags = ZE_DEVICE_MEM_ALLOC_FLAG_BIAS_UNCACHED;
     memAllocDesc.ordinal = 0;
 
     ze_host_mem_alloc_desc_t hostDesc;
-    hostDesc.flags = memAllocDesc.flags = ZE_DEVICE_MEM_ALLOC_FLAG_BIAS_CACHED;
+    //hostDesc.flags = memAllocDesc.flags = ZE_DEVICE_MEM_ALLOC_FLAG_BIAS_CACHED;
 
     void *sharedA = nullptr;
     VALIDATECALL(zeMemAllocShared(context, &memAllocDesc, &hostDesc, allocSize, 1, device, &sharedA));
@@ -135,23 +125,52 @@ int runWithSharedMemory(int argc, char** argv) {
     void *dstResult = nullptr;
     VALIDATECALL(zeMemAllocShared(context, &memAllocDesc, &hostDesc, allocSize, 1, device, &dstResult));
 
+
+    void *timeStampStartOut = nullptr;
+    void *timeStampStopOut = nullptr;
+    constexpr size_t allocSizeTimer = 64;
+    VALIDATECALL(zeMemAllocDevice(context, &memAllocDesc, allocSizeTimer, 1, device, &timeStampStartOut));
+    VALIDATECALL(zeMemAllocDevice(context, &memAllocDesc, allocSizeTimer, 1, device, &timeStampStopOut));
+
     // memory initialization
     memset(sharedA, 2.5, allocSize);
     memset(dstResult, 0.0, allocSize);
 
-    VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, dstResult, sharedA, allocSize, nullptr, 0, nullptr));
-       
-    auto begin = std::chrono::steady_clock::now();
-    VALIDATECALL(zeCommandListClose(cmdList));
-    VALIDATECALL(zeCommandQueueExecuteCommandLists(cmdQueue, 1, &cmdList, nullptr));    
-    VALIDATECALL(zeCommandQueueSynchronize(cmdQueue, std::numeric_limits<uint64_t>::max()));
-    auto end = std::chrono::steady_clock::now();
+    for (int i = 0; i < MAX_ITERATIONS; i++) {
 
-    auto elapsedTime = std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count();
-    std::cout << "C++ Timer = " << elapsedTime << " [ns]" << std::endl;
+        VALIDATECALL(zeCommandListAppendWriteGlobalTimestamp(cmdList, (uint64_t *)timeStampStartOut, nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, dstResult, sharedA, allocSize, nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendBarrier(cmdList, nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendWriteGlobalTimestamp(cmdList, (uint64_t *)timeStampStopOut, nullptr, 0, nullptr));
+
+        uint64_t timeStartOut = 0;
+        uint64_t timeStopOut = 0;
+        VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, &timeStartOut, timeStampStartOut, sizeof(timeStartOut), nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, &timeStopOut, timeStampStopOut, sizeof(timeStopOut), nullptr, 0, nullptr));
+
+        auto begin = std::chrono::steady_clock::now();
+        VALIDATECALL(zeCommandListClose(cmdList));
+        VALIDATECALL(zeCommandQueueExecuteCommandLists(cmdQueue, 1, &cmdList, nullptr));    
+        VALIDATECALL(zeCommandQueueSynchronize(cmdQueue, std::numeric_limits<uint64_t>::max()));
+        VALIDATECALL(zeCommandListReset(cmdList));
+        auto end = std::chrono::steady_clock::now();
+
+        auto elapsedTime = std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count();
+        //std::cout << "C++ Timer = " << elapsedTime << " [ns]" << std::endl;
+
+        ze_device_properties_t devProperties = {ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES};  
+        VALIDATECALL(zeDeviceGetProperties(device, &devProperties));
+
+        uint64_t copyOutDuration = timeStopOut - timeStartOut;
+        uint64_t timerResolution = devProperties.timerResolution;
+        std::cout << "SHARED: " << copyOutDuration * timerResolution << " ns\n";
+
+    }
 
     // Cleanup
     VALIDATECALL(zeMemFree(context, dstResult));
+    VALIDATECALL(zeMemFree(context, timeStampStartOut));
+    VALIDATECALL(zeMemFree(context, timeStampStopOut));
     VALIDATECALL(zeMemFree(context, sharedA));
     VALIDATECALL(zeCommandListDestroy(cmdList));
     VALIDATECALL(zeCommandQueueDestroy(cmdQueue));
@@ -159,14 +178,7 @@ int runWithSharedMemory(int argc, char** argv) {
     return 0;
 }
 
-int runWithDeviceMemory(int argc, char **argv) {
-
-    uint32_t inputElements = 512;
-    if (argc > 1) {
-        inputElements = atoi(argv[1]);
-    }
-
-    std::cout << "#inputElements: " << inputElements << std::endl;
+int profilerDedicatedMemoryCopies(int inputBytes) {
 
     ze_driver_handle_t driverHandle;
     ze_context_handle_t context;
@@ -183,25 +195,22 @@ int runWithDeviceMemory(int argc, char **argv) {
     ze_command_list_handle_t cmdList;
     createCommandList(device, context, cmdList, ordinal);
 
-    // Create two buffers
-    uint32_t items = inputElements;
-    size_t allocSize = items * sizeof(float);
+    size_t allocSize = inputBytes;
 
-    std::cout << "Total ALLOC SIZE: " << allocSize << " (bytes)\n";
-
-    ze_device_mem_alloc_desc_t memAllocDesc;
-    memAllocDesc.flags = ZE_DEVICE_MEM_ALLOC_FLAG_BIAS_CACHED;
+    ze_device_mem_alloc_desc_t memAllocDesc = {ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC};
+    //memAllocDesc.flags = ZE_DEVICE_MEM_ALLOC_FLAG_BIAS_UNCACHED;
     memAllocDesc.ordinal = 0;
 
-    ze_host_mem_alloc_desc_t hostDesc;
-    hostDesc.flags = memAllocDesc.flags = ZE_DEVICE_MEM_ALLOC_FLAG_BIAS_CACHED;
+    ze_host_mem_alloc_desc_t hostDesc = {ZE_STRUCTURE_TYPE_HOST_MEM_ALLOC_DESC};
+    //hostDesc.flags = memAllocDesc.flags = ZE_DEVICE_MEM_ALLOC_FLAG_BIAS_UNCACHED;
 
     void *deviceBuffer = nullptr;
-    ze_result_t result = zeMemAllocDevice(context, &memAllocDesc, allocSize, 64, device, &deviceBuffer);
+    ze_result_t result = zeMemAllocDevice(context, &memAllocDesc, allocSize, 1, device, &deviceBuffer);
     if (result == ZE_RESULT_ERROR_UNSUPPORTED_SIZE) {
         std::cout << "Size is too big. Unsupported\n";
     }
     VALIDATECALL(result);
+
 
     void *timeStampStartIn = nullptr;
     void *timeStampStopIn = nullptr;
@@ -214,67 +223,311 @@ int runWithDeviceMemory(int argc, char **argv) {
     VALIDATECALL(zeMemAllocDevice(context, &memAllocDesc, allocSizeTimer, 1, device, &timeStampStartOut));
     VALIDATECALL(zeMemAllocDevice(context, &memAllocDesc, allocSizeTimer, 1, device, &timeStampStopOut));
     
-    float *heapBuffer = new float[inputElements];
-    for (int i = 0; i < items; i++) {
+    int elements = inputBytes / 4;
+    float *heapBuffer = new float[elements];
+    for (int i = 0; i < elements; i++) {
         heapBuffer[i] = 10.0;
     }
 
-    float *heapBuffer2 = new float[inputElements];
+    float *heapBuffer2 = new float[elements];
 
-    // Copy from HEAP -> Device Allocated Memory
-    VALIDATECALL(zeCommandListAppendWriteGlobalTimestamp(cmdList, (uint64_t *)timeStampStartIn, nullptr, 0, nullptr));
-    VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, deviceBuffer, heapBuffer, allocSize, nullptr, 0, nullptr));
-    VALIDATECALL(zeCommandListAppendBarrier(cmdList, nullptr, 0, nullptr));
-    VALIDATECALL(zeCommandListAppendWriteGlobalTimestamp(cmdList, (uint64_t *)timeStampStopIn, nullptr, 0, nullptr));
+    for (int i = 0; i < MAX_ITERATIONS; i++) {
 
-    VALIDATECALL(zeCommandListAppendWriteGlobalTimestamp(cmdList, (uint64_t *)timeStampStartOut, nullptr, 0, nullptr));
-    VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, heapBuffer2, deviceBuffer, allocSize, nullptr, 0, nullptr));
-    VALIDATECALL(zeCommandListAppendBarrier(cmdList, nullptr, 0, nullptr));
-    VALIDATECALL(zeCommandListAppendWriteGlobalTimestamp(cmdList, (uint64_t *)timeStampStopOut, nullptr, 0, nullptr));
+        // Copy from HEAP -> Device Allocated Memory
+        VALIDATECALL(zeCommandListAppendWriteGlobalTimestamp(cmdList, (uint64_t *)timeStampStartIn, nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, deviceBuffer, heapBuffer, allocSize, nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendBarrier(cmdList, nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendWriteGlobalTimestamp(cmdList, (uint64_t *)timeStampStopIn, nullptr, 0, nullptr));
 
-    // Copy back timestamps
-    uint64_t timeStartIn = 0;
-    uint64_t timeStopIn = 0;
-    uint64_t timeStartOut = 0;
-    uint64_t timeStopOut = 0;
-    VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, &timeStartIn, timeStampStartIn, sizeof(timeStartIn), nullptr, 0, nullptr));
-    VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, &timeStopIn, timeStampStopIn, sizeof(timeStopIn), nullptr, 0, nullptr));
-    VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, &timeStartOut, timeStampStartOut, sizeof(timeStartOut), nullptr, 0, nullptr));
-    VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, &timeStopOut, timeStampStopOut, sizeof(timeStopOut), nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendWriteGlobalTimestamp(cmdList, (uint64_t *)timeStampStartOut, nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, heapBuffer2, deviceBuffer, allocSize, nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendBarrier(cmdList, nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendWriteGlobalTimestamp(cmdList, (uint64_t *)timeStampStopOut, nullptr, 0, nullptr));
 
-    auto begin = std::chrono::steady_clock::now();
-    VALIDATECALL(zeCommandListClose(cmdList));
-    VALIDATECALL(zeCommandQueueExecuteCommandLists(cmdQueue, 1, &cmdList, nullptr));    
-    VALIDATECALL(zeCommandQueueSynchronize(cmdQueue, std::numeric_limits<uint64_t>::max()));
-    auto end = std::chrono::steady_clock::now();
+        // Copy back timestamps
+        uint64_t timeStartIn = 0;
+        uint64_t timeStopIn = 0;
+        uint64_t timeStartOut = 0;
+        uint64_t timeStopOut = 0;
+        VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, &timeStartIn, timeStampStartIn, sizeof(timeStartIn), nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, &timeStopIn, timeStampStopIn, sizeof(timeStopIn), nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, &timeStartOut, timeStampStartOut, sizeof(timeStartOut), nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, &timeStopOut, timeStampStopOut, sizeof(timeStopOut), nullptr, 0, nullptr));
 
-    auto elapsedTime = std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count();
-    std::cout << "C++ Timer = " << elapsedTime << " [ns]" << std::endl;
+        auto begin = std::chrono::steady_clock::now();
+        VALIDATECALL(zeCommandListClose(cmdList));
+        VALIDATECALL(zeCommandQueueExecuteCommandLists(cmdQueue, 1, &cmdList, nullptr));    
+        VALIDATECALL(zeCommandQueueSynchronize(cmdQueue, std::numeric_limits<uint64_t>::max()));
+        VALIDATECALL(zeCommandListReset(cmdList));
+        auto end = std::chrono::steady_clock::now();
 
-    ze_device_properties_t devProperties = {ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES};
-    VALIDATECALL(zeDeviceGetProperties(device, &devProperties));
+        auto elapsedTime = std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count();
+        //std::cout << "C++ Timer = " << elapsedTime << " [ns]" << std::endl;
 
-    uint64_t copyInDuration = timeStopIn - timeStartIn;
-    uint64_t copyOutDuration = timeStopOut - timeStartOut;
-    uint64_t timerResolution = devProperties.timerResolution;
-    std::cout << "Global timestamp statistics: \n"
+        ze_device_properties_t devProperties = {ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES};
+        VALIDATECALL(zeDeviceGetProperties(device, &devProperties));
+
+        uint64_t copyInDuration = timeStopIn - timeStartIn;
+        uint64_t copyOutDuration = timeStopOut - timeStartOut;
+        uint64_t timerResolution = devProperties.timerResolution;
+        std::cout << "-------------: \n"
               << std::fixed
-              << " IN : " << copyInDuration * timerResolution << " ns\n"
-              << " OUT: " << copyOutDuration * timerResolution << " ns\n";
+              << "Heap->Device: " << copyInDuration * timerResolution << " ns\n"
+              << "Device->Heap: " << copyOutDuration * timerResolution << " ns\n";
+
+    }
 
     // Cleanup
     VALIDATECALL(zeMemFree(context, deviceBuffer));
+    VALIDATECALL(zeMemFree(context, timeStampStartIn));
+    VALIDATECALL(zeMemFree(context, timeStampStopIn));
+    VALIDATECALL(zeMemFree(context, timeStampStartOut));
+    VALIDATECALL(zeMemFree(context, timeStampStopOut));
     VALIDATECALL(zeCommandListDestroy(cmdList));
     VALIDATECALL(zeCommandQueueDestroy(cmdQueue));
     VALIDATECALL(zeContextDestroy(context));
     return 0;
 }
 
+int profileDeviceToDeviceCopy(int inputBytes) {
+
+    ze_driver_handle_t driverHandle;
+    ze_context_handle_t context;
+    ze_device_handle_t device;
+
+    init(driverHandle, context, device);
+
+    printBasicInfo(device);
+   
+    ze_command_queue_handle_t cmdQueue;
+    uint32_t ordinal = createCommandQueue(device, context, cmdQueue);
+
+    // Create a command list
+    ze_command_list_handle_t cmdList;
+    createCommandList(device, context, cmdList, ordinal);
+
+    size_t allocSize = inputBytes;
+
+    ze_device_mem_alloc_desc_t memAllocDesc = {ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC};
+    //memAllocDesc.flags = ZE_DEVICE_MEM_ALLOC_FLAG_BIAS_UNCACHED;
+    memAllocDesc.ordinal = 0;
+
+    ze_host_mem_alloc_desc_t hostDesc = {ZE_STRUCTURE_TYPE_HOST_MEM_ALLOC_DESC};
+    //hostDesc.flags = memAllocDesc.flags = ZE_DEVICE_MEM_ALLOC_FLAG_BIAS_UNCACHED;
+
+    void *deviceBufferA = nullptr;
+    ze_result_t result = zeMemAllocDevice(context, &memAllocDesc, allocSize, 1, device, &deviceBufferA);
+    if (result == ZE_RESULT_ERROR_UNSUPPORTED_SIZE) {
+        std::cout << "Size is too big. Unsupported\n";
+    }
+    VALIDATECALL(result);
+
+    void *deviceBufferB = nullptr;
+    result = zeMemAllocDevice(context, &memAllocDesc, allocSize, 1, device, &deviceBufferB);
+    if (result == ZE_RESULT_ERROR_UNSUPPORTED_SIZE) {
+        std::cout << "Size is too big. Unsupported\n";
+    }
+    VALIDATECALL(result);
+
+
+    void *timeStampStartIn = nullptr;
+    void *timeStampStopIn = nullptr;
+    const size_t allocSizeTimer = 64;
+    VALIDATECALL(zeMemAllocDevice(context, &memAllocDesc, allocSizeTimer, 1, device, &timeStampStartIn));
+    VALIDATECALL(zeMemAllocDevice(context, &memAllocDesc, allocSizeTimer, 1, device, &timeStampStopIn));
+
+    
+    int elements = inputBytes / 4;
+    float *heapBuffer = new float[elements];
+    for (int i = 0; i < elements; i++) {
+        heapBuffer[i] = 10.0;
+    }
+
+    float *heapBuffer2 = new float[elements];
+
+    for (int i = 0; i < MAX_ITERATIONS; i++) {
+
+        VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, deviceBufferA, heapBuffer, allocSize, nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendBarrier(cmdList, nullptr, 0, nullptr));
+
+        VALIDATECALL(zeCommandListAppendWriteGlobalTimestamp(cmdList, (uint64_t *)timeStampStartIn, nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, deviceBufferB, deviceBufferA, allocSize, nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendBarrier(cmdList, nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendWriteGlobalTimestamp(cmdList, (uint64_t *)timeStampStopIn, nullptr, 0, nullptr));
+
+        uint64_t timeStartIn = 0;
+        uint64_t timeStopIn = 0;
+        VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, &timeStartIn, timeStampStartIn, sizeof(timeStartIn), nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, &timeStopIn, timeStampStopIn, sizeof(timeStopIn), nullptr, 0, nullptr));
+
+        auto begin = std::chrono::steady_clock::now();
+        VALIDATECALL(zeCommandListClose(cmdList));
+        VALIDATECALL(zeCommandQueueExecuteCommandLists(cmdQueue, 1, &cmdList, nullptr));    
+        VALIDATECALL(zeCommandQueueSynchronize(cmdQueue, std::numeric_limits<uint64_t>::max()));
+        VALIDATECALL(zeCommandListReset(cmdList));
+        auto end = std::chrono::steady_clock::now();
+
+        auto elapsedTime = std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count();
+        //std::cout << "C++ Timer = " << elapsedTime << " [ns]" << std::endl;
+
+        ze_device_properties_t devProperties = {ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES};
+        VALIDATECALL(zeDeviceGetProperties(device, &devProperties));
+
+        uint64_t copyInDuration = timeStopIn - timeStartIn;
+        uint64_t timerResolution = devProperties.timerResolution;
+        std::cout << "DEVICE->DEVICE: " << copyInDuration * timerResolution << " ns\n";
+    }
+
+    // Cleanup
+    VALIDATECALL(zeMemFree(context, deviceBufferA));
+    VALIDATECALL(zeMemFree(context, deviceBufferB));
+    VALIDATECALL(zeMemFree(context, timeStampStartIn));
+    VALIDATECALL(zeMemFree(context, timeStampStopIn));
+    VALIDATECALL(zeCommandListDestroy(cmdList));
+    VALIDATECALL(zeCommandQueueDestroy(cmdQueue));
+    VALIDATECALL(zeContextDestroy(context));
+    return 0;
+}
+
+
+int profileHostMemoryToDeviceCopy(int inputBytes) {
+
+    ze_driver_handle_t driverHandle;
+    ze_context_handle_t context;
+    ze_device_handle_t device;
+
+    init(driverHandle, context, device);
+
+    printBasicInfo(device);
+   
+    ze_command_queue_handle_t cmdQueue;
+    uint32_t ordinal = createCommandQueue(device, context, cmdQueue);
+
+    // Create a command list
+    ze_command_list_handle_t cmdList;
+    createCommandList(device, context, cmdList, ordinal);
+
+    size_t allocSize = inputBytes;
+
+    ze_device_mem_alloc_desc_t memAllocDesc = {ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC};
+    //memAllocDesc.flags = ZE_DEVICE_MEM_ALLOC_FLAG_BIAS_UNCACHED;
+    memAllocDesc.ordinal = 0;
+
+    ze_host_mem_alloc_desc_t hostDesc = {ZE_STRUCTURE_TYPE_HOST_MEM_ALLOC_DESC};
+    //hostDesc.flags = memAllocDesc.flags = ZE_DEVICE_MEM_ALLOC_FLAG_BIAS_UNCACHED;
+
+    void *deviceBuffer = nullptr;
+    ze_result_t result = zeMemAllocDevice(context, &memAllocDesc, allocSize, 1, device, &deviceBuffer);
+    if (result == ZE_RESULT_ERROR_UNSUPPORTED_SIZE) {
+        std::cout << "Size is too big. Unsupported\n";
+    }
+    VALIDATECALL(result);
+
+    void *hostBuffer = nullptr;
+    result = zeMemAllocHost(context, &hostDesc, allocSize, 1, &hostBuffer);
+    if (result == ZE_RESULT_ERROR_UNSUPPORTED_SIZE) {
+        std::cout << "Size is too big. Unsupported\n";
+    }
+    VALIDATECALL(result);
+
+
+    void *timeStampStartIn = nullptr;
+    void *timeStampStopIn = nullptr;
+    const size_t allocSizeTimer = 64;
+    VALIDATECALL(zeMemAllocDevice(context, &memAllocDesc, allocSizeTimer, 1, device, &timeStampStartIn));
+    VALIDATECALL(zeMemAllocDevice(context, &memAllocDesc, allocSizeTimer, 1, device, &timeStampStopIn));
+
+    void *timeStampStartOut = nullptr;
+    void *timeStampStopOut = nullptr;
+    VALIDATECALL(zeMemAllocDevice(context, &memAllocDesc, allocSizeTimer, 1, device, &timeStampStartOut));
+    VALIDATECALL(zeMemAllocDevice(context, &memAllocDesc, allocSizeTimer, 1, device, &timeStampStopOut));
+    
+
+    
+    int elements = inputBytes / 4;
+    float *heapBuffer = new float[elements];
+    for (int i = 0; i < elements; i++) {
+        heapBuffer[i] = 10.0;
+    }
+
+    float *heapBuffer2 = new float[elements];
+
+    for (int i = 0; i < MAX_ITERATIONS; i++) {
+
+        VALIDATECALL(zeCommandListAppendWriteGlobalTimestamp(cmdList, (uint64_t *)timeStampStartIn, nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, deviceBuffer, hostBuffer, allocSize, nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendBarrier(cmdList, nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendWriteGlobalTimestamp(cmdList, (uint64_t *)timeStampStopIn, nullptr, 0, nullptr));
+
+
+        VALIDATECALL(zeCommandListAppendWriteGlobalTimestamp(cmdList, (uint64_t *)timeStampStartOut, nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, hostBuffer, deviceBuffer, allocSize, nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendBarrier(cmdList, nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendWriteGlobalTimestamp(cmdList, (uint64_t *)timeStampStopOut, nullptr, 0, nullptr));
+        
+        // Copy back timestamps
+        uint64_t timeStartIn = 0;
+        uint64_t timeStopIn = 0;
+        uint64_t timeStartOut = 0;
+        uint64_t timeStopOut = 0;
+        VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, &timeStartIn, timeStampStartIn, sizeof(timeStartIn), nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, &timeStopIn, timeStampStopIn, sizeof(timeStopIn), nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, &timeStartOut, timeStampStartOut, sizeof(timeStartOut), nullptr, 0, nullptr));
+        VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, &timeStopOut, timeStampStopOut, sizeof(timeStopOut), nullptr, 0, nullptr));
+
+        auto begin = std::chrono::steady_clock::now();
+        VALIDATECALL(zeCommandListClose(cmdList));
+        VALIDATECALL(zeCommandQueueExecuteCommandLists(cmdQueue, 1, &cmdList, nullptr));    
+        VALIDATECALL(zeCommandQueueSynchronize(cmdQueue, std::numeric_limits<uint64_t>::max()));
+        VALIDATECALL(zeCommandListReset(cmdList));
+        auto end = std::chrono::steady_clock::now();
+
+        auto elapsedTime = std::chrono::duration_cast<std::chrono::nanoseconds> (end - begin).count();
+        //std::cout << "C++ Timer = " << elapsedTime << " [ns]" << std::endl;
+
+        ze_device_properties_t devProperties = {ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES};
+        VALIDATECALL(zeDeviceGetProperties(device, &devProperties));
+
+        uint64_t copyInDuration = timeStopIn - timeStartIn;
+        uint64_t copyOutDuration = timeStopOut - timeStartOut;
+        uint64_t timerResolution = devProperties.timerResolution;
+        std::cout << "-------------: \n"
+              << std::fixed
+              << "HOST->DEVICE: " << copyInDuration * timerResolution << " ns\n"
+              << "DEVICE->HOST: " << copyOutDuration * timerResolution << " ns\n";
+    }
+
+    // Cleanup
+    VALIDATECALL(zeMemFree(context, deviceBuffer));
+    VALIDATECALL(zeMemFree(context, hostBuffer));
+    VALIDATECALL(zeMemFree(context, timeStampStartIn));
+    VALIDATECALL(zeMemFree(context, timeStampStopIn));
+    VALIDATECALL(zeMemFree(context, timeStampStartOut));
+    VALIDATECALL(zeMemFree(context, timeStampStopOut));
+    VALIDATECALL(zeCommandListDestroy(cmdList));
+    VALIDATECALL(zeCommandQueueDestroy(cmdQueue));
+    VALIDATECALL(zeContextDestroy(context));
+    return 0;
+}
+
+
+
 int main(int argc, char**argv) {
 
-    //runWithSharedMemory(argc, argv);
+    uint64_t inputBytes = 512;
+    if (argc > 1) {
+        inputBytes = atol(argv[1]);
+    }
 
-    runWithDeviceMemory(argc, argv);
+    std::cout << "#bytes: " << inputBytes << std::endl;
+
+    profileWithSharedMemoryCopies(inputBytes);
+
+    profilerDedicatedMemoryCopies(inputBytes);
+
+    profileDeviceToDeviceCopy(inputBytes);
+
+    profileHostMemoryToDeviceCopy(inputBytes);
 
     return 0;
 }
