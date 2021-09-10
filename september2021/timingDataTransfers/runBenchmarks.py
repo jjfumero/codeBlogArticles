@@ -84,7 +84,6 @@ class CommandBenchmark:
             while (returncode != 0):
                 out, err, returncode = self.runCommand(command, size)     
 
-
             m = re.findall(r"SHARED: (\d+)", out)
             
             if (m != None):

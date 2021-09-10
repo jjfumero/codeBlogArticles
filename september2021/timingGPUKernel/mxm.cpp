@@ -55,12 +55,16 @@ void createEventPoolAndEvents(ze_context_handle_t &context,
 
     VALIDATECALL(zeEventPoolCreate(context, &eventPoolDesc, 1, &device, &eventPool));
 
-    for (uint32_t i = 0; i < poolSize; i++) {
-        eventDesc.index = i;
+    ze_event_handle_t eventKernel;
+
+    //for (uint32_t i = 0; i < poolSize; i++) {
+        eventDesc.index = 0;
         eventDesc.signal = ZE_EVENT_SCOPE_FLAG_HOST;
         eventDesc.wait = ZE_EVENT_SCOPE_FLAG_HOST;
-        VALIDATECALL(zeEventCreate(eventPool, &eventDesc, events + i));
-    }
+        VALIDATECALL(zeEventCreate(eventPool, &eventDesc, &eventKernel));
+    //}
+
+    events[0] = eventKernel;
 }
 
 int main(int argc, char **argv) {
@@ -160,9 +164,12 @@ int main(int argc, char **argv) {
 
     void *timestampBuffer = nullptr;
     VALIDATECALL(zeMemAllocHost(context, &hostDesc, sizeof(ze_kernel_timestamp_result_t), 1, &timestampBuffer));
-    
     memset(timestampBuffer, 0, sizeof(ze_kernel_timestamp_result_t));
 
+    //VALIDATECALL(zeMemAllocShared(context, &memAllocDesc, &hostDesc, sizeof(ze_kernel_timestamp_result_t), 1, device, &timestampBuffer));
+
+    //VALIDATECALL(zeMemAllocDevice(context, &memAllocDesc, sizeof(ze_kernel_timestamp_result_t), sizeof(uint32_t), device, &timestampBuffer));
+    
 
     // Module Initialization
     ze_module_handle_t module = nullptr;
