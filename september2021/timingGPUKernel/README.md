@@ -46,3 +46,15 @@ make
 ```
 
 
+#### How to run the benchmarks
+
+```bash
+$ python3 runBenchmarks.py --run
+
+// Query database
+$ python3 runBenchmarks.py --performance
+
+//The output format is:
+// SIZE TIMER_NAME TIMER_VALUE COUNTER 
+
+```
