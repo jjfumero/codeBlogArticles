@@ -1,5 +1,9 @@
+## Link to article:
 
-#### How to compile and run?
+[https://jjfumero.github.io/posts/2021/09/introduction-to-level-zero](https://jjfumero.github.io/posts/2021/09/introduction-to-level-zero/)
+
+
+## How to compile and run?
 
 ```bash
 export LEVEL_ZERO_ROOT=/path/to/level-zero-code 
