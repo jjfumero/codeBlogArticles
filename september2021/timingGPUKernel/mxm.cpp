@@ -79,16 +79,14 @@ void createEventPoolAndEvents(ze_context_handle_t &context,
 
     VALIDATECALL(zeEventPoolCreate(context, &eventPoolDesc, 1, &device, &eventPool));
 
-    ze_event_handle_t eventKernel;
 
-    //for (uint32_t i = 0; i < poolSize; i++) {
+    for (uint32_t i = 0; i < poolSize; i++) {
         eventDesc.index = 0;
         eventDesc.signal = ZE_EVENT_SCOPE_FLAG_HOST;
         eventDesc.wait = ZE_EVENT_SCOPE_FLAG_HOST;
-        VALIDATECALL(zeEventCreate(eventPool, &eventDesc, &eventKernel));
-    //}
+        VALIDATECALL(zeEventCreate(eventPool, &eventDesc, events + i));
+    }
 
-    events[0] = eventKernel;
 }
 
 int main(int argc, char **argv) {
