@@ -1,3 +1,5 @@
+Code for blog article: https://jjfumero.github.io/posts/2021/09/timers-with-level-zero/ 
+
 
 Example to demonstrate how to measure the elapsed time between two commands within a command list. 
 The goal of this example is to measure the data transfers time and the time that it takes to copy data from one buffer to another in Level Zero. 
