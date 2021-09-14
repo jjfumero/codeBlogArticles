@@ -1,3 +1,4 @@
+Code for blog article: https://jjfumero.github.io/posts/2021/09/timers-with-level-zero/
 
 Example to demonstrate how to measure the GPU Kernel Execution time with Level Zero. 
 
