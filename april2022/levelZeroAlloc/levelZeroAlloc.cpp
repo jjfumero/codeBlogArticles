@@ -139,7 +139,7 @@ int main(int argc, char **argv) {
     hostDesc.pNext = &exceedCapacity;
     memAllocDesc.pNext = &exceedCapacity;
 
-    std::cout << "Allocating Shared: " << allocSize << " bytes - " << (allocSize * 1e-9 ) << " (GB) " << std::endl;
+    std::cout << "Allocating Shared Memory: " << allocSize << " bytes - " << (allocSize * 1e-9 ) << " (GB) " << std::endl;
     result = zeMemAllocShared(context, &memAllocDesc, &hostDesc, allocSize, 128, device, &sharedBuffer);
     if (result == 0x78000009) {
          std::cout << "size argument is not supported by the device \n";
@@ -147,10 +147,9 @@ int main(int argc, char **argv) {
         std::cout << "\tAlloc OK" << std::endl;
     }
 
-
-    // // Option B) Device Memory
+    // Option B) Device Memory
     void *deviceBuffer = nullptr;
-    std::cout << "Allocating On Device: " << allocSize << " bytes - " << (allocSize * 1e-9 ) << " (GB) " << std::endl;
+    std::cout << "Allocating Device Memory: " << allocSize << " bytes - " << (allocSize * 1e-9 ) << " (GB) " << std::endl;
     result = zeMemAllocDevice(context, &memAllocDesc, allocSize, 64, device, &deviceBuffer);
     if (result == 0x78000009) {
         std::cout << "size argument is not supported by the device \n";
@@ -158,9 +157,9 @@ int main(int argc, char **argv) {
         std::cout << "\tAlloc OK" << std::endl;
     }
     
-    // // Option C) Host Allocated Memory
+    // Option C) Host Allocated Memory
     void *hostBuffer = nullptr;
-    std::cout << "Allocating from Host " << allocSize << " bytes - " << (allocSize * 1e-9 ) << " (GB) " << std::endl;
+    std::cout << "Allocating Host Memory: " << allocSize << " bytes - " << (allocSize * 1e-9 ) << " (GB) " << std::endl;
     result = zeMemAllocHost(context, &hostDesc, allocSize, 64, &hostBuffer);
     if (result == 0x78000009) {
         std::cout << "size argument is not supported by the device \n";

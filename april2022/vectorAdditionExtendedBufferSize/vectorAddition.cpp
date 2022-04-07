@@ -73,8 +73,11 @@ int main(int argc, char **argv) {
     VALIDATECALL(zeDriverGet(&driverCount, &driverHandle));
 
     // Create the context
-    ze_context_desc_t contextDescription = {};
-    contextDescription.stype = ZE_STRUCTURE_TYPE_CONTEXT_DESC;
+    ze_context_desc_t contextDescription = {
+        ZE_STRUCTURE_TYPE_CONTEXT_DESC,
+        nullptr, 
+        0, 
+    };
     ze_context_handle_t context;
     VALIDATECALL(zeContextCreate(driverHandle, &contextDescription, &context));
 
