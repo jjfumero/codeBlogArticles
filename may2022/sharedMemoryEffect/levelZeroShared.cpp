@@ -79,15 +79,20 @@ int main(int argc, char **argv) {
     bool use_host_memory = false;
     bool use_host_only_memory = false;
     if ( version == "s" ) {
+        // Shared memory
         std::cout << "Using Shared Memory" << std::endl;
         use_shared_memory = true;
     } else if ( version == "d" ) {
+        // Device only memory
         std::cout << "Using Device Memory" << std::endl;
         use_device_memory = true;
     } else if ( version == "h" ) {
-        std::cout << "Using Host Memory" << std::endl;
+        // Use Combined Host/Shared Memory. Mimic scenario for managed runtime programming languages
+        // such as Java. 
+        std::cout << "Using Combined Host/Device Memory" << std::endl;
         use_host_memory = true;
     } else if ( version == "o" ) {
+        // Host Only memory
         std::cout << "Using Host ONLY Memory" << std::endl;
         use_host_only_memory = true;
     }
