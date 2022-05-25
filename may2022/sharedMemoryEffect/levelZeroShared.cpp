@@ -36,6 +36,8 @@
 #include <memory>
 #include <vector>
 
+#define MAX_ITERATIONS 10
+
 #define VALIDATECALL(myZeCall) \
     if (myZeCall != ZE_RESULT_SUCCESS){ \
         std::cout << "Error at "       \
@@ -293,6 +295,9 @@ int main(int argc, char **argv) {
     VALIDATECALL(zeMemAllocDevice(context, &memAllocDesc, allocSizeTimer, 1, device, &timeStampStopOut));
 
 
+    uint64_t firstIteration = 0;
+    uint64_t lastIteration = 0;
+
     for (int i = 0; i < 10; i++) {
 
         auto begin = std::chrono::steady_clock::now();
@@ -357,11 +362,21 @@ int main(int argc, char **argv) {
 
         uint64_t copyOutDuration = timeStopOut - timeStartOut;
         uint64_t timerResolution = devProperties.timerResolution;
-        std::cout << "Timer    : " << copyOutDuration * timerResolution << " [ns]\n";
+        uint64_t total =  copyOutDuration * timerResolution;
+        std::cout << "GPU-Timer    : " << copyOutDuration * timerResolution << " [ns]\n";
  
         // Reset command list
         VALIDATECALL(zeCommandListReset(cmdList));
+
+        if (i == 0) {
+            firstIteration = total;
+        } else if (i == (MAX_ITERATIONS - 1)) {
+            lastIteration = total;
+        }
     }
+
+    std::cout << "TIMER-FIRST-ITERATION: " << firstIteration << std::endl;
+    std::cout << "TIMER-LAST-ITERATION: " << lastIteration << std::endl;
 
     // Validate
     bool outputValidationSuccessful = true;
