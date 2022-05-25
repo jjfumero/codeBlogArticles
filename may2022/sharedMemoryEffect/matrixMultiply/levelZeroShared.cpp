@@ -89,25 +89,30 @@ int main(int argc, char **argv) {
     // GET THE VERSIONS
     // "s" : shared
     // "d" : device
+    // "c" : combined (host/device)
     // "h" : host
     bool use_shared_memory = false;
     bool use_device_memory = false;
-    bool use_host_memory = false;
+    bool use_combined_host_device_memory = false;
     bool use_host_only_memory = false;
     if ( version == "s" ) {
+        // Shared memory
         std::cout << "Using Shared Memory" << std::endl;
         use_shared_memory = true;
     } else if ( version == "d" ) {
+        // Device only memory
         std::cout << "Using Device Memory" << std::endl;
         use_device_memory = true;
+    } else if ( version == "c" ) {
+        // Use Combined Host/Shared Memory. Mimic scenario for managed runtime programming languages
+        // such as Java. 
+        std::cout << "Using Combined Host/Device Memory" << std::endl;
+        use_combined_host_device_memory = true;
     } else if ( version == "h" ) {
-        std::cout << "Using Host Memory" << std::endl;
-        use_host_memory = true;
-    } else if ( version == "o" ) {
+        // Host Only memory
         std::cout << "Using Host ONLY Memory" << std::endl;
         use_host_only_memory = true;
     }
-
 
     // Initialization
     VALIDATECALL(zeInit(ZE_INIT_FLAG_GPU_ONLY));
@@ -219,7 +224,7 @@ int main(int argc, char **argv) {
         result = zeMemAllocDevice(context, &memAllocDesc, allocSize, 64, device, &computeBufferC);
         checkMemoryError(result);
 
-    } else if (use_host_memory) {
+    } else if (use_combined_host_device_memory) {
 
         std::cout << "Allocating Device Memory: " << allocSize << " bytes - " << (allocSize * 1e-9 ) << " (GB) " << std::endl;
         result = zeMemAllocDevice(context, &memAllocDesc, allocSize, 64, device, &computeBufferA);
@@ -285,7 +290,7 @@ int main(int argc, char **argv) {
                 heapBufferB[i * N + j] = 2;
             }
         }
-    } else if (use_host_memory || use_host_only_memory) {
+    } else if (use_combined_host_device_memory || use_host_only_memory) {
          for (size_t i = 0; i < N; ++i) {
              for (size_t j = 0; j < N; j++) {
                 hostBufferA[i * N + j] = 2;
@@ -346,17 +351,16 @@ int main(int argc, char **argv) {
         auto begin = std::chrono::steady_clock::now();
         VALIDATECALL(zeCommandListAppendWriteGlobalTimestamp(cmdList, (uint64_t *)timeStampStartOut, nullptr, 0, nullptr));
 
-        if (!use_shared_memory) {
-            // Copy from host to device
-            if (use_device_memory) {
-                VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, computeBufferA, heapBufferA, allocSize, nullptr, 0, nullptr));
-                VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, computeBufferB, heapBufferB, allocSize, nullptr, 0, nullptr));
-            } else if (use_host_memory) {
-                VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, computeBufferA, hostBufferA, allocSize, nullptr, 0, nullptr));
-                VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, computeBufferB, hostBufferB, allocSize, nullptr, 0, nullptr));
-            }
+       
+        // Copy from host to device
+        if (use_device_memory) {
+            VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, computeBufferA, heapBufferA, allocSize, nullptr, 0, nullptr));
+            VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, computeBufferB, heapBufferB, allocSize, nullptr, 0, nullptr));
+        } else if (use_combined_host_device_memory) {
+            VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, computeBufferA, hostBufferA, allocSize, nullptr, 0, nullptr));
+            VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, computeBufferB, hostBufferB, allocSize, nullptr, 0, nullptr));
         }
-
+       
         uint32_t groupSizeX = 32u;
         uint32_t groupSizeY = 32u;
         uint32_t groupSizeZ = 1u;
@@ -385,14 +389,11 @@ int main(int argc, char **argv) {
         // Launch kernel on the GPU
         VALIDATECALL(zeCommandListAppendLaunchKernel(cmdList, kernel, &dispatch, nullptr, 0, nullptr));
 
-        if (!use_shared_memory) {
-
-            // Copy from device to host
-            if (use_device_memory) {
-                VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, heapBufferC, computeBufferC, allocSize, nullptr, 0, nullptr));
-            } else if (use_host_memory) {
-                VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, hostBufferC, computeBufferC, allocSize, nullptr, 0, nullptr));
-            }
+        // Copy from device to host
+        if (use_device_memory) {
+            VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, heapBufferC, computeBufferC, allocSize, nullptr, 0, nullptr));
+        } else if (use_combined_host_device_memory) {
+            VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, hostBufferC, computeBufferC, allocSize, nullptr, 0, nullptr));
         }
 
         VALIDATECALL(zeCommandListAppendWriteGlobalTimestamp(cmdList, (uint64_t *)timeStampStopOut, nullptr, 0, nullptr));
@@ -467,7 +468,7 @@ int main(int argc, char **argv) {
                 }
             }
         }
-    } else if (use_host_memory || use_host_only_memory) {
+    } else if (use_combined_host_device_memory || use_host_only_memory) {
 
         int32_t *resultSeq = (uint32_t *)malloc(allocSize);
 

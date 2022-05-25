@@ -20,12 +20,12 @@ done
 for size in ${sizes[@]}
 do
     echo "Running with Size: ${size}"
-    ./levelZeroShared h $size >> HOST.log
+    ./levelZeroShared c $size >> COMBINED_DEVICE_HOST.log
 done
 
 #### Run with Host Only Memory
 for size in ${sizes[@]}
 do
     echo "Running with Size: ${size}"
-    ./levelZeroShared o $size >> ONLY_HOST.log
+    ./levelZeroShared h $size >> HOST.log
 done

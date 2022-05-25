@@ -17,17 +17,17 @@ do
     ./levelZeroShared d $size >> DEVICE.log
 done
 
-#### Run with Host Memory
+#### Run with Combined Device/Host Memory
 for size in ${sizes[@]}
 do
     echo "Running with Size: ${size}"
-    ./levelZeroShared h $size >> COMBINED.log
+    ./levelZeroShared c $size >> COMBINED_DEVICE_HOST.log
 done
 
 #### Run with Host Only Memory
 for size in ${sizes[@]}
 do
     echo "Running with Size: ${size}"
-    ./levelZeroShared o $size >> ONLY_HOST.log
+    ./levelZeroShared h $size >> HOST.log
 done
 

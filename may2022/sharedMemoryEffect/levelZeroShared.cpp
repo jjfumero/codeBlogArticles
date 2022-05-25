@@ -75,10 +75,11 @@ int main(int argc, char **argv) {
     // GET THE VERSIONS
     // "s" : shared
     // "d" : device
+    // "c" : combined (host/device)
     // "h" : host
     bool use_shared_memory = false;
     bool use_device_memory = false;
-    bool use_host_memory = false;
+    bool use_combined_host_device_memory = false;
     bool use_host_only_memory = false;
     if ( version == "s" ) {
         // Shared memory
@@ -88,12 +89,12 @@ int main(int argc, char **argv) {
         // Device only memory
         std::cout << "Using Device Memory" << std::endl;
         use_device_memory = true;
-    } else if ( version == "h" ) {
+    } else if ( version == "c" ) {
         // Use Combined Host/Shared Memory. Mimic scenario for managed runtime programming languages
         // such as Java. 
         std::cout << "Using Combined Host/Device Memory" << std::endl;
-        use_host_memory = true;
-    } else if ( version == "o" ) {
+        use_combined_host_device_memory = true;
+    } else if ( version == "h" ) {
         // Host Only memory
         std::cout << "Using Host ONLY Memory" << std::endl;
         use_host_only_memory = true;
@@ -200,15 +201,7 @@ int main(int argc, char **argv) {
         std::cout << "Allocating Device Memory: " << allocSize << " bytes - " << (allocSize * 1e-9 ) << " (GB) " << std::endl;
         result = zeMemAllocDevice(context, &memAllocDesc, allocSize, 64, device, &computeBufferB);
         checkMemoryError(result);
-    } else if (use_host_memory) {
-
-        std::cout << "Allocating Device Memory: " << allocSize << " bytes - " << (allocSize * 1e-9 ) << " (GB) " << std::endl;
-        result = zeMemAllocDevice(context, &memAllocDesc, allocSize, 64, device, &computeBufferA);
-        checkMemoryError(result);
-
-        std::cout << "Allocating Device Memory: " << allocSize << " bytes - " << (allocSize * 1e-9 ) << " (GB) " << std::endl;
-        result = zeMemAllocDevice(context, &memAllocDesc, allocSize, 64, device, &computeBufferB);
-        checkMemoryError(result);
+    } else if (use_combined_host_device_memory) {
 
         std::cout << "Allocating Host Memory: " << allocSize << " bytes - " << (allocSize * 1e-9 ) << " (GB) " << std::endl;
         result = zeMemAllocHost(context, &hostDesc, allocSize, 64, &hostBufferA);
@@ -217,6 +210,15 @@ int main(int argc, char **argv) {
         std::cout << "Allocating Host Memory: " << allocSize << " bytes - " << (allocSize * 1e-9 ) << " (GB) " << std::endl;
         result = zeMemAllocHost(context, &hostDesc, allocSize, 64, &hostBufferB);
         checkMemoryError(result);
+
+        std::cout << "Allocating Device Memory: " << allocSize << " bytes - " << (allocSize * 1e-9 ) << " (GB) " << std::endl;
+        result = zeMemAllocDevice(context, &memAllocDesc, allocSize, 64, device, &computeBufferA);
+        checkMemoryError(result);
+
+        std::cout << "Allocating Device Memory: " << allocSize << " bytes - " << (allocSize * 1e-9 ) << " (GB) " << std::endl;
+        result = zeMemAllocDevice(context, &memAllocDesc, allocSize, 64, device, &computeBufferB);
+        checkMemoryError(result);
+        
     } else if (use_host_only_memory) {
         std::cout << "Allocating Host Only Memory: " << allocSize << " bytes - " << (allocSize * 1e-9 ) << " (GB) " << std::endl;
         result = zeMemAllocHost(context, &hostDesc, allocSize, 64, &hostBufferA);
@@ -245,7 +247,7 @@ int main(int argc, char **argv) {
         for (size_t i = 0; i < items; i++) {
             heapBuffer[i] = 100;
         }
-    } else if (use_host_memory || use_host_only_memory) {
+    } else if (use_combined_host_device_memory || use_host_only_memory) {
          for (size_t i = 0; i < items; ++i) {
             hostBufferA[i] = static_cast<int>(100);
         }
@@ -305,8 +307,10 @@ int main(int argc, char **argv) {
 
         // Copy from host to device if needed
         if (use_device_memory) {
+            // Copy from C++ heap allocated to device memory
             VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, computeBufferA, heapBuffer, allocSize, nullptr, 0, nullptr));
-        } else if (use_host_memory) {
+        } else if (use_combined_host_device_memory) {
+            // Copy from Host Memory to Device Memory types
             VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, computeBufferA, hostBufferA, allocSize, nullptr, 0, nullptr));
         }
         
@@ -336,8 +340,10 @@ int main(int argc, char **argv) {
 
         // Copy from device to host
         if (use_device_memory) {
+            // Copy from device memory to the C++ heap allocated buffer
             VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, resultBuffer, computeBufferB, allocSize, nullptr, 0, nullptr));
-        } else if (use_host_memory) {
+        } else if (use_combined_host_device_memory) {
+            // Copy from the device memory to the host memory with Level Zero
             VALIDATECALL(zeCommandListAppendMemoryCopy(cmdList, hostBufferB, computeBufferB, allocSize, nullptr, 0, nullptr));
         }
 
@@ -398,7 +404,7 @@ int main(int argc, char **argv) {
                 break;
             }
         }
-    } else if (use_host_memory || use_host_only_memory) {
+    } else if (use_combined_host_device_memory || use_host_only_memory) {
         for (size_t i = 0; i < items; i++) {
             //std::cout << hostBufferB[i] << std::endl;
             if (hostBufferB[i] != (hostBufferA[i] + 100)) {
