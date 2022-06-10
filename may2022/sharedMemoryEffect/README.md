@@ -9,5 +9,5 @@ $ export CPLUS_INCLUDE_PATH=$LEVEL_ZERO_ROOT/include:$CPLUS_INCLUDE_PATH
 $ export LD_LIBRARY_PATH=$LEVEL_ZERO_ROOT/build/lib:$LD_LIBRARY_PATH 
 
 $ make 
-$ ./levelZeroShared <vectorSize>
+$ ./levelZeroShared <allocator:s|d|h|c> <vectorSize>
 ```
