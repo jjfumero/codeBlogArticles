@@ -253,9 +253,9 @@ int main(int argc, char **argv) {
 
 
         // Push arguments
-        VALIDATECALL(zeKernelSetArgumentValue(kernel, 0, sizeof(dstResult), &dstResult));
-        VALIDATECALL(zeKernelSetArgumentValue(kernel, 1, sizeof(sharedA), &sharedA));
-        VALIDATECALL(zeKernelSetArgumentValue(kernel, 2, sizeof(sharedB), &sharedB));
+        VALIDATECALL(zeKernelSetArgumentValue(kernel, 0, sizeof(sharedA), &sharedA));
+        VALIDATECALL(zeKernelSetArgumentValue(kernel, 1, sizeof(sharedB), &sharedB));
+        VALIDATECALL(zeKernelSetArgumentValue(kernel, 2, sizeof(dstResult), &dstResult));
         VALIDATECALL(zeKernelSetArgumentValue(kernel, 3, sizeof(int), &items));
 
         // Kernel thread-dispatch

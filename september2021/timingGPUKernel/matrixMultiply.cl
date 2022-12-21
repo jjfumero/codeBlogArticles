@@ -1,4 +1,4 @@
-__kernel void mxm(__global float* a, __global float* b, __global float *c, const int n) {
+__kernel void mxm(__global float* a, __global float* b, __global float *result, const int n) {
 	uint idx = get_global_id(0);
 	uint jdx = get_global_id(1);
 
@@ -7,5 +7,5 @@ __kernel void mxm(__global float* a, __global float* b, __global float *c, const
 		sum += a[idx * n + k] * b[k * n + jdx];
 	}
 
-	c[idx * n + jdx] = sum;
+	result[idx * n + jdx] = sum;
 }
